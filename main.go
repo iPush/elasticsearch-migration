@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"bufio"
+	"io"
+	"os"
+
 	log "github.com/cihub/seelog"
 	goflags "github.com/jessevdk/go-flags"
 	pb "gopkg.in/cheggaaa/pb.v1"
-	"os"
-	"io"
 )
 
 func main() {
@@ -21,9 +22,8 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	c := &Config{}
-	migrator:=Migrator{}
-	migrator.Config=c
-
+	migrator := Migrator{}
+	migrator.Config = c
 
 	// parse args
 	_, err := goflags.Parse(c)
@@ -44,7 +44,7 @@ func main() {
 	}
 
 	if c.SourceEs == c.TargetEs && c.SourceIndexNames == c.TargetIndexName {
-		log.Error("migration output is the same as the output")
+		log.Error("migration output is the same as the input")
 		return
 	}
 
@@ -68,7 +68,7 @@ func main() {
 		}
 
 		//get source es version
-		srcESVersion, errs := migrator.ClusterVersion(c.SourceEs, migrator.SourceAuth,migrator.Config.SourceProxy)
+		srcESVersion, errs := migrator.ClusterVersion(c.SourceEs, migrator.SourceAuth, migrator.Config.SourceProxy)
 		if errs != nil {
 			return
 		}
@@ -77,30 +77,32 @@ func main() {
 			api := new(ESAPIV5)
 			api.Host = c.SourceEs
 			api.Auth = migrator.SourceAuth
-			api.HttpProxy=migrator.Config.SourceProxy
+			api.HttpProxy = migrator.Config.SourceProxy
 			migrator.SourceESAPI = api
 		} else {
 			log.Debug("source es is not V5,", srcESVersion.Version.Number)
 			api := new(ESAPIV0)
 			api.Host = c.SourceEs
 			api.Auth = migrator.SourceAuth
-			api.HttpProxy=migrator.Config.SourceProxy
+			api.HttpProxy = migrator.Config.SourceProxy
 			migrator.SourceESAPI = api
 		}
 
-		if(c.ScrollSliceSize<1){c.ScrollSliceSize=1}
+		if c.ScrollSliceSize < 1 {
+			c.ScrollSliceSize = 1
+		}
 
-		fetchBar.ShowBar=false
+		fetchBar.ShowBar = false
 
-		totalSize:=0;
-		finishedSlice:=0
-		for slice:=0;slice<c.ScrollSliceSize ;slice++  {
-			scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query,slice,c.ScrollSliceSize)
+		totalSize := 0
+		finishedSlice := 0
+		for slice := 0; slice < c.ScrollSliceSize; slice++ {
+			scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query, slice, c.ScrollSliceSize)
 			if err != nil {
 				log.Error(err)
 				return
 			}
-			totalSize+=scroll.Hits.Total
+			totalSize += scroll.Hits.Total
 
 			if scroll != nil && scroll.Hits.Docs != nil {
 
@@ -108,7 +110,6 @@ func main() {
 					log.Error("can't find documents from source.")
 					return
 				}
-
 
 				go func() {
 					wg.Add(1)
@@ -125,7 +126,7 @@ func main() {
 					finishedSlice++
 
 					//clean up final results
-					if(finishedSlice==c.ScrollSliceSize){
+					if finishedSlice == c.ScrollSliceSize {
 						log.Debug("closing doc chan")
 						close(migrator.DocChan)
 					}
@@ -133,13 +134,11 @@ func main() {
 			}
 		}
 
-		if(totalSize>0){
-			fetchBar.Total=int64(totalSize)
-			fetchBar.ShowBar=true
+		if totalSize > 0 {
+			fetchBar.Total = int64(totalSize)
+			fetchBar.ShowBar = true
 			outputBar = pb.New(totalSize).Prefix("Output ")
 		}
-
-
 
 	} else if len(c.DumpInputFile) > 0 {
 		//read file stream
@@ -153,9 +152,9 @@ func main() {
 		lineCount := 0
 		defer f.Close()
 		r := bufio.NewReader(f)
-		for{
-			_,err := r.ReadString('\n')
-			if io.EOF == err || nil != err{
+		for {
+			_, err := r.ReadString('\n')
+			if io.EOF == err || nil != err {
 				break
 			}
 			lineCount += 1
@@ -165,7 +164,7 @@ func main() {
 		outputBar = pb.New(lineCount).Prefix("Output ")
 		f.Close()
 
-		go migrator.NewFileReadWorker(fetchBar,&wg)
+		go migrator.NewFileReadWorker(fetchBar, &wg)
 	}
 
 	// start pool
@@ -183,7 +182,7 @@ func main() {
 		}
 
 		//get target es version
-		descESVersion, errs := migrator.ClusterVersion(c.TargetEs, migrator.TargetAuth,migrator.Config.TargetProxy)
+		descESVersion, errs := migrator.ClusterVersion(c.TargetEs, migrator.TargetAuth, migrator.Config.TargetProxy)
 		if errs != nil {
 			return
 		}
@@ -193,14 +192,14 @@ func main() {
 			api := new(ESAPIV5)
 			api.Host = c.TargetEs
 			api.Auth = migrator.TargetAuth
-			api.HttpProxy=migrator.Config.TargetProxy
+			api.HttpProxy = migrator.Config.TargetProxy
 			migrator.TargetESAPI = api
 		} else {
 			log.Debug("target es is not V5,", descESVersion.Version.Number)
 			api := new(ESAPIV0)
 			api.Host = c.TargetEs
 			api.Auth = migrator.TargetAuth
-			api.HttpProxy=migrator.Config.TargetProxy
+			api.HttpProxy = migrator.Config.TargetProxy
 			migrator.TargetESAPI = api
 
 		}
@@ -244,7 +243,7 @@ func main() {
 
 			sourceIndexRefreshSettings := map[string]interface{}{}
 
-			log.Debugf("indexCount: %d",indexCount)
+			log.Debugf("indexCount: %d", indexCount)
 
 			if indexCount > 0 {
 				//override indexnames to be copy
@@ -272,8 +271,8 @@ func main() {
 					log.Debug("target IndexSettings", targetIndexSettings)
 
 					//if there is only one index and we specify the dest indexname
-					if (c.SourceIndexNames != c.TargetIndexName && (len(c.TargetIndexName) > 0) && indexCount == 1 ) {
-						log.Debugf("only one index,so we can rewrite indexname, src:%v, dest:%v ,indexCount:%d",c.SourceIndexNames,c.TargetIndexName,indexCount)
+					if c.SourceIndexNames != c.TargetIndexName && (len(c.TargetIndexName) > 0) && indexCount == 1 {
+						log.Debugf("only one index,so we can rewrite indexname, src:%v, dest:%v ,indexCount:%d", c.SourceIndexNames, c.TargetIndexName, indexCount)
 						(*sourceIndexSettings)[c.TargetIndexName] = (*sourceIndexSettings)[c.SourceIndexNames]
 						delete(*sourceIndexSettings, c.SourceIndexNames)
 						log.Debug(sourceIndexSettings)
@@ -353,8 +352,8 @@ func main() {
 					if c.CopyIndexMappings {
 
 						//if there is only one index and we specify the dest indexname
-						if (c.SourceIndexNames != c.TargetIndexName && (len(c.TargetIndexName) > 0) && indexCount == 1 ) {
-							log.Debugf("only one index,so we can rewrite indexname, src:%v, dest:%v ,indexCount:%d",c.SourceIndexNames,c.TargetIndexName,indexCount)
+						if c.SourceIndexNames != c.TargetIndexName && (len(c.TargetIndexName) > 0) && indexCount == 1 {
+							log.Debugf("only one index,so we can rewrite indexname, src:%v, dest:%v ,indexCount:%d", c.SourceIndexNames, c.TargetIndexName, indexCount)
 							(*sourceIndexMappings)[c.TargetIndexName] = (*sourceIndexMappings)[c.SourceIndexNames]
 							delete(*sourceIndexMappings, c.SourceIndexNames)
 							log.Debug(sourceIndexMappings)
@@ -423,10 +422,10 @@ func (c *Migrator) recoveryIndexSettings(sourceIndexRefreshSettings map[string]i
 	}
 }
 
-func (c *Migrator) ClusterVersion(host string, auth *Auth,proxy string) (*ClusterVersion, []error) {
+func (c *Migrator) ClusterVersion(host string, auth *Auth, proxy string) (*ClusterVersion, []error) {
 
 	url := fmt.Sprintf("%s", host)
-	_, body, errs := Get(url, auth,proxy)
+	_, body, errs := Get(url, auth, proxy)
 	if errs != nil {
 		log.Error(errs)
 		return nil, errs

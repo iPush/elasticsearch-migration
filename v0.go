@@ -21,11 +21,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	log "github.com/cihub/seelog"
 	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strings"
+
+	log "github.com/cihub/seelog"
 )
 
 type ESAPIV0 struct {
@@ -37,7 +38,7 @@ type ESAPIV0 struct {
 func (s *ESAPIV0) ClusterHealth() *ClusterHealth {
 
 	url := fmt.Sprintf("%s/_cluster/health", s.Host)
-	_, body, errs := Get(url, s.Auth,s.HttpProxy)
+	_, body, errs := Get(url, s.Auth, s.HttpProxy)
 
 	if errs != nil {
 		return &ClusterHealth{Name: s.Host, Status: "unreachable"}
@@ -78,7 +79,7 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer) {
 		log.Error(err)
 		return
 	}
-	log.Trace(url,string(body))
+	log.Trace(url, string(body))
 	defer resp.Body.Close()
 	defer data.Reset()
 	if resp.StatusCode != 200 {
@@ -93,7 +94,7 @@ func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
 	allSettings := &Indexes{}
 
 	url := fmt.Sprintf("%s/%s/_settings", s.Host, indexNames)
-	resp, body, errs := Get(url, s.Auth,s.HttpProxy)
+	resp, body, errs := Get(url, s.Auth, s.HttpProxy)
 	if errs != nil {
 		return nil, errs[0]
 	}
@@ -116,7 +117,7 @@ func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
 
 func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool, indexNames string) (string, int, *Indexes, error) {
 	url := fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
-	resp, body, errs := Get(url, s.Auth,s.HttpProxy)
+	resp, body, errs := Get(url, s.Auth, s.HttpProxy)
 	if errs != nil {
 		log.Error(errs)
 		return "", 0, nil, errs[0]
@@ -213,18 +214,18 @@ func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface
 			log.Debug("update static index settings: ", name)
 			staticIndexSettings := getEmptyIndexSettings()
 			staticIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["analysis"] = set
-			Post(fmt.Sprintf("%s/%s/_close", s.Host, name), s.Auth, "",s.HttpProxy)
+			Post(fmt.Sprintf("%s/%s/_close", s.Host, name), s.Auth, "", s.HttpProxy)
 			body := bytes.Buffer{}
 			enc := json.NewEncoder(&body)
 			enc.Encode(staticIndexSettings)
-			bodyStr, err := Request("PUT", url, s.Auth, &body,s.HttpProxy)
+			bodyStr, err := Request("PUT", url, s.Auth, &body, s.HttpProxy)
 			if err != nil {
 				log.Error(bodyStr, err)
 				panic(err)
 				return err
 			}
 			delete(settings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "analysis")
-			Post(fmt.Sprintf("%s/%s/_open", s.Host, name), s.Auth, "",s.HttpProxy)
+			Post(fmt.Sprintf("%s/%s/_open", s.Host, name), s.Auth, "", s.HttpProxy)
 		}
 	}
 
@@ -233,29 +234,29 @@ func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface
 	body := bytes.Buffer{}
 	enc := json.NewEncoder(&body)
 	enc.Encode(settings)
-	_, err := Request("PUT", url, s.Auth, &body,s.HttpProxy)
+	_, err := Request("PUT", url, s.Auth, &body, s.HttpProxy)
 
 	return err
 }
 
 func (s *ESAPIV0) UpdateIndexMapping(indexName string, settings map[string]interface{}) error {
 
-	log.Debug("start update mapping: ", indexName,settings)
+	log.Debug("start update mapping: ", indexName, settings)
 
 	for name, mapping := range settings {
 
-		log.Debug("start update mapping: ", indexName,name,mapping)
+		log.Debug("start update mapping: ", indexName, name, mapping)
 
 		url := fmt.Sprintf("%s/%s/%s/_mapping", s.Host, indexName, name)
 
 		body := bytes.Buffer{}
 		enc := json.NewEncoder(&body)
 		enc.Encode(mapping)
-		res, err := Request("POST", url, s.Auth, &body,s.HttpProxy)
-		if(err!=nil){
+		res, err := Request("POST", url, s.Auth, &body, s.HttpProxy)
+		if err != nil {
 			log.Error(url)
 			log.Error(body.String())
-			log.Error(err,res)
+			log.Error(err, res)
 			panic(err)
 		}
 	}
@@ -268,7 +269,7 @@ func (s *ESAPIV0) DeleteIndex(name string) (err error) {
 
 	url := fmt.Sprintf("%s/%s", s.Host, name)
 
-	Request("DELETE", url, s.Auth, nil,s.HttpProxy)
+	Request("DELETE", url, s.Auth, nil, s.HttpProxy)
 
 	log.Debug("delete index: ", name)
 
@@ -285,48 +286,45 @@ func (s *ESAPIV0) CreateIndex(name string, settings map[string]interface{}) (err
 
 	url := fmt.Sprintf("%s/%s", s.Host, name)
 
-	resp, err := Request("PUT", url, s.Auth, &body,s.HttpProxy)
-	log.Debugf("response: %s",resp)
+	resp, err := Request("PUT", url, s.Auth, &body, s.HttpProxy)
+	log.Debugf("response: %s", resp)
 
 	return err
 }
 
 func (s *ESAPIV0) Refresh(name string) (err error) {
 
-
 	log.Debug("refresh index: ", name)
 
 	url := fmt.Sprintf("%s/%s/_refresh", s.Host, name)
 
-	Post(url,s.Auth,"",s.HttpProxy)
+	Post(url, s.Auth, "", s.HttpProxy)
 
 	return nil
 }
 
-func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int,query string, slicedId,maxSlicedCount int) (scroll *Scroll, err error) {
+func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int, query string, slicedId, maxSlicedCount int) (scroll *Scroll, err error) {
 
 	// curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
 	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
 
-	jsonBody:=""
-	if(len(query)>0) {
+	jsonBody := ""
+	if len(query) > 0 {
 		queryBody := map[string]interface{}{}
 		queryBody["query"] = map[string]interface{}{}
 		queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
 		queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
 
 		jsonArray, err := json.Marshal(queryBody)
-		if (err != nil) {
+		if err != nil {
 			log.Error(err)
 
-		}else{
-			jsonBody=string(jsonArray)
+		} else {
+			jsonBody = string(jsonArray)
 		}
 	}
 
-	resp, body, errs := Post(url, s.Auth,jsonBody,s.HttpProxy)
-
-
+	resp, body, errs := Post(url, s.Auth, jsonBody, s.HttpProxy)
 
 	if err != nil {
 		log.Error(errs)
@@ -334,7 +332,7 @@ func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount
 	}
 	defer resp.Body.Close()
 
-	log.Trace("new scroll,",url, body)
+	log.Trace("new scroll,", url, body)
 
 	if err != nil {
 		log.Error(err)
@@ -346,9 +344,16 @@ func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount
 	}
 
 	scroll = &Scroll{}
-	err = json.Unmarshal([]byte(body), scroll)
-	if err != nil {
-		log.Error(err)
+	//err = json.Unmarshal([]byte(body), scroll)
+	//if err != nil {
+	//	log.Error(err)
+	//	return nil, err
+	//}
+
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	if err = decoder.Decode(scroll); err != nil {
+		log.Error(body)
 		return nil, err
 	}
 
@@ -359,7 +364,7 @@ func (s *ESAPIV0) NextScroll(scrollTime string, scrollId string) (*Scroll, error
 	//  curl -XGET 'http://es-0.9:9200/_search/scroll?scroll=5m'
 	id := bytes.NewBufferString(scrollId)
 	url := fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
-	resp, body, errs := Get(url, s.Auth,s.HttpProxy)
+	resp, body, errs := Get(url, s.Auth, s.HttpProxy)
 	if errs != nil {
 		log.Error(errs)
 		return nil, errs[0]
@@ -371,18 +376,23 @@ func (s *ESAPIV0) NextScroll(scrollTime string, scrollId string) (*Scroll, error
 
 	defer resp.Body.Close()
 
-	log.Trace("next scroll,",url,body)
+	log.Trace("next scroll,", url, body)
 
 	// decode elasticsearch scroll response
 	scroll := &Scroll{}
-	err := json.Unmarshal([]byte(body), &scroll)
-	if err != nil {
+	//err := json.Unmarshal([]byte(body), &scroll)
+	//if err != nil {
+	//	log.Error(body)
+	//	log.Error(err)
+	//	return nil, err
+	//}
+
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(scroll); err != nil {
 		log.Error(body)
-		log.Error(err)
 		return nil, err
 	}
 
 	return scroll, nil
 }
-
-
